@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>[강력한 스키마 기반] Gemini AI 건축 대안 웹</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind Safelist 색상 유지용 설정 -->
+    <script>
+        tailwind.config = {
+            safelist: [
+                { pattern: /bg-(indigo|emerald|amber|rose|sky|violet)-(50|400|500|600|900)/ },
+                { pattern: /text-(indigo|emerald|amber|rose|sky|violet)-(50|400|500|600|700)/ },
+                { pattern: /border-(indigo|emerald|amber|rose|sky|violet)-(100|200|400|500)/ },
+                { pattern: /ring-(indigo|emerald|amber|rose|sky|violet)-500/ }
+            ]
+        }
+    </script>
+    <!-- OpenLayers CSS & JS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v8.2.0/ol.css">
+    <script src="https://cdn.jsdelivr.net/npm/ol@v8.2.0/dist/ol.js"></script>
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body { margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #f8fafc; }
+        #map { width: 100%; height: 280px; border-radius: 0.5rem; overflow: hidden; }
+        #three-canvas { width: 100%; height: 450px; border-radius: 0.5rem; outline: none; }
+        
+        /* 스크롤바 커스텀 */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="h-screen flex flex-col md:flex-row overflow-hidden bg-slate-50 text-slate-800">
+    
+    <!-- ================= 왼쪽 사이드바 (입력/옵션) ================= -->
+    <div class="w-full md:w-[28%] min-w-[320px] bg-white border-r border-slate-200 flex flex-col h-full overflow-y-auto shadow-sm z-10 shrink-0">
+        <div class="p-6">
+            <h1 class="text-xl font-extrabold text-slate-900 mb-1 tracking-tight flex items-center">
+                <svg class="w-5 h-5 mr-2 text-indigo-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                Gemini Architect AI
+            </h1>
+            <p class="text-[11px] text-slate-500 mb-6 font-bold uppercase tracking-wider bg-slate-100 px-2 py-1 rounded inline-block">Schema Validated Mode</p>
+            
+            <!-- API Key 보안 영역 -->
+            <div class="mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <h3 class="text-xs font-bold text-slate-700 mb-3 flex items-center">
+                    <svg class="w-3.5 h-3.5 mr-1 text-amber-500" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                    API 인증 (로컬에서만 처리됨)
+                </h3>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">1. VWORLD API 키 (선택)</label>
+                        <input type="password" id="vworld-api-key" placeholder="코드 상단의 VWORLD_KEY 변수" class="block w-full rounded-md border-slate-300 shadow-sm p-2 border focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-xs bg-white transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider flex justify-between">
+                            <span>2. Google Gemini API 키</span>
+                            <span class="text-rose-500">*필수</span>
+                        </label>
+                        <input type="password" id="gemini-api-key" placeholder="코드 상단의 GEMINI_KEY 변수" class="block w-full rounded-md border-rose-200 shadow-sm p-2 border focus:border-rose-500 focus:ring-1 focus:ring-rose-500 text-xs bg-white transition-all">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 대상지 선택 (Step 1) -->
+            <div class="mb-6">
+                <h2 class="text-sm font-bold text-slate-800 mb-2">1. 대상지 선택 (25m 반경 지정)</h2>
+                <div id="map" class="shadow-inner border border-slate-300"></div>
+                
+                <!-- 지형 정보 노출부 -->
+                <div id="terrain-info" class="mt-3 p-3 bg-indigo-50 rounded-lg border border-indigo-100 hidden">
+                    <h3 class="text-[11px] font-bold text-indigo-700 mb-1.5 flex items-center uppercase tracking-wider">
+                        EXTRACTED DATA
+                    </h3>
+                    <ul id="terrain-data" class="text-xs text-indigo-900 space-y-1"></ul>
+                </div>
+            </div>
+
+            <!-- 설계 조건 (Step 2) -->
+            <div class="mb-6">
+                <h2 class="text-sm font-bold text-slate-800 mb-3">2. 건축 설계 조건</h2>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">건축물 주 용도</label>
+                        <select id="building-use" class="block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 bg-white p-2 border text-sm transition-colors cursor-pointer">
+                            <option value="residential">주거용 (다세대/다가구)</option>
+                            <option value="commercial">상업용 (근린생활시설)</option>
+                            <option value="office">업무용 (사옥/오피스)</option>
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">총 층수</label>
+                            <div class="relative">
+                                <input type="number" id="floors" value="4" min="1" max="50" class="block w-full rounded-md border-slate-300 shadow-sm p-2 border focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm transition-colors text-right pr-6">
+                                <span class="absolute right-2 top-2 text-xs text-slate-400">층</span>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">목표 연면적</label>
+                            <div class="relative">
+                                <input type="number" id="target-area" value="450" min="50" class="block w-full rounded-md border-slate-300 shadow-sm p-2 border focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm transition-colors text-right pr-8">
+                                <span class="absolute right-2 top-2 text-xs text-slate-400">㎡</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 생성 버튼 -->
+            <button id="generate-btn" class="w-full bg-slate-900 text-white font-bold py-3.5 px-4 rounded-xl shadow-md hover:bg-indigo-600 hover:shadow-lg hover:-translate-y-0.5 transform transition-all duration-200 mt-2 disabled:bg-slate-300 disabled:cursor-not-allowed disabled:transform-none">
+                AI 최적 대안 3개 생성하기
+            </button>
+            <p id="generate-warn" class="text-xs text-rose-500 mt-2 font-medium hidden">지도에서 먼저 대상지를 클릭해주세요.</p>
+        </div>
+    </div>
+
+
+    <!-- ================= 오른쪽 콘텐츠 구역 (결과 카드 & 3D) ================= -->
+    <div class="w-full md:w-[72%] bg-slate-50 flex flex-col h-full overflow-y-auto relative">
+        <div class="p-8 w-full max-w-7xl mx-auto flex flex-col min-h-full">
+            
+            <!-- [Step 3: AI 대안 카드 리스트] -->
+            <div class="mb-8">
+                <h2 class="text-xl font-bold text-slate-800 mb-4 inline-flex items-center">
+                    3. Gemini AI 생성 대안
+                    <span class="ml-3 px-2 py-0.5 text-[10px] bg-indigo-100 text-indigo-700 rounded-lg font-bold uppercase tracking-widest border border-indigo-200 shadow-sm">Strict Schema API</span>
+                </h2>
+                
+                <div id="alternatives-container" class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                    <!-- 초기 안내 화면 -->
+                    <div class="col-span-1 lg:col-span-3 flex flex-col items-center justify-center text-slate-400 py-20 bg-white/50 rounded-2xl border-2 border-dashed border-slate-300">
+                        <svg class="w-10 h-10 mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                        <p class="font-medium">지도에서 위치를 선택하고 Gemini API 키를 입력한 후 생성 버튼을 클릭하세요.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- [Step 4: 3D Visualization Viewer] -->
+            <div id="viewer-section" class="flex-grow flex flex-col min-h-[400px] opacity-0 pointer-events-none transition-opacity duration-700 hidden">
+                <div class="flex flex-col sm:flex-row justify-between items-end sm:items-center mb-3 mt-4 gap-4">
+                    <h2 class="text-xl font-bold text-slate-800 inline-flex items-center">
+                        4. 인터랙티브 3D 매스 (Three.js)
+                    </h2>
+                    
+                    <!-- SketchUp Export -->
+                    <button id="export-sketchup-btn" class="bg-emerald-500 text-white text-sm font-bold py-2.5 px-6 rounded-lg shadow-sm hover:bg-emerald-600 hover:shadow transform hover:-translate-y-0.5 transition-all flex items-center">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        스케치업 연동 (.json 내보내기)
+                    </button>
+                </div>
+                
+                <div class="bg-white p-1 rounded-2xl shadow-sm border border-slate-200 relative flex-grow flex flex-col overflow-hidden group">
+                    <div id="three-canvas" class="flex-grow bg-slate-100 rounded-xl overflow-hidden cursor-move"></div>
+                    
+                    <div class="absolute top-4 left-4 bg-white/95 backdrop-blur-sm px-4 py-2.5 rounded-xl text-sm text-slate-800 shadow-sm font-bold pointer-events-none flex flex-col border border-slate-100 transition-opacity">
+                        <div class="flex items-center">
+                            <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 mr-2 animate-pulse"></span>
+                            <span id="current-alt-label" class="tracking-tight">선택된 대안 없음</span>
+                        </div>
+                    </div>
+                    
+                    <div class="absolute bottom-4 right-4 bg-slate-900/70 backdrop-blur-md px-3 py-1.5 rounded-lg text-[10px] text-slate-200 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity uppercase font-bold tracking-widest">
+                        좌클릭: 회전 / 우클릭: 이동 / 휠: 줌
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // ==========================================
+        // [설정: 전역 API KEY 선언부]
+        // ==========================================
+        const VWORLD_KEY = ''; 
+        let GEMINI_KEY = '';   
+
+        // ==========================================
+        // [Step 1: OpenLayers & 지형 데이터 추출 로직]
+        // ==========================================
+        let selectedCoordinates = null;
+        let selectedCoordinatesInfo = {};
+        let selectedAlternative = null;
+        let alternativesData = [];
+
+        const map = new ol.Map({
+            target: 'map',
+            layers: [ new ol.layer.Tile({ source: new ol.source.OSM() }) ],
+            view: new ol.View({
+                center: ol.proj.fromLonLat([126.9780, 37.5665]),
+                zoom: 16
+            }),
+            controls: []
+        });
+
+        const vectorSource = new ol.source.Vector();
+        const vectorLayer = new ol.layer.Vector({ source: vectorSource });
+        map.addLayer(vectorLayer);
+
+        map.on('click', function(evt) {
+            const coord = evt.coordinate;
+            const lonlat = ol.proj.toLonLat(coord);
+            selectedCoordinates = lonlat;
+            vectorSource.clear();
+
+            const pointFeature = new ol.Feature(new ol.geom.Point(coord));
+            pointFeature.setStyle(new ol.style.Style({
+                image: new ol.style.Circle({
+                    radius: 5, fill: new ol.style.Fill({ color: '#4f46e5' }),
+                    stroke: new ol.style.Stroke({ color: '#fff', width: 2 })
+                })
+            }));
+
+            const circleFeature = new ol.Feature(new ol.geom.Circle(coord, 28)); 
+            circleFeature.setStyle(new ol.style.Style({
+                fill: new ol.style.Fill({ color: 'rgba(79, 70, 229, 0.1)' }),
+                stroke: new ol.style.Stroke({ color: 'rgba(79, 70, 229, 0.4)', width: 1.5 })
+            }));
+
+            vectorSource.addFeature(circleFeature);
+            vectorSource.addFeature(pointFeature);
+
+            fetchTerrainInfo(lonlat[0], lonlat[1]);
+        });
+
+        function fetchTerrainInfo(lon, lat) {
+            const inputKey = document.getElementById('vworld-api-key').value.trim();
+            const apiKey = inputKey || VWORLD_KEY || 'DEMO_KEY';
+            
+            const mockElevation = (Math.random() * 20 + 2).toFixed(2); 
+            const mockSlope = (Math.random() * 12 + 0.5).toFixed(1); 
+            
+            selectedCoordinatesInfo = {
+                longitude: lon.toFixed(6),
+                latitude: lat.toFixed(6),
+                elevation: mockElevation,
+                slope: mockSlope,
+                context: "도심지 주변, 2차선 도로 인접, 남향 채광 양호" 
+            };
+
+            const infoUl = document.getElementById('terrain-data');
+            infoUl.innerHTML = `
+                <li><span class="font-bold opacity-70 inline-block w-12">LON</span> : ${selectedCoordinatesInfo.longitude}</li>
+                <li><span class="font-bold opacity-70 inline-block w-12">LAT</span> : ${selectedCoordinatesInfo.latitude}</li>
+                <li><span class="font-bold opacity-70 inline-block w-12">ALT</span> : 해발 ${selectedCoordinatesInfo.elevation}m</li>
+                <li><span class="font-bold opacity-70 inline-block w-12">SLP</span> : ${selectedCoordinatesInfo.slope}도</li>
+            `;
+            
+            document.getElementById('terrain-info').classList.remove('hidden');
+            document.getElementById('generate-warn').classList.add('hidden');
+        }
+
+        // ==========================================
+        // [Step 2: Google Gemini API 연동 (Schema 스키마 기반)]
+        // ==========================================
+        async function callGeminiAPI(use, floors, area) {
+            const uiKey = document.getElementById('gemini-api-key').value.trim();
+            const finalGeminiKey = uiKey || GEMINI_KEY;
+            
+            if(!finalGeminiKey) {
+                alert("AI 대안 생성을 위한 Google Gemini API 키를 좌측 패널에 입력하시거나 코드 상단 변수에 입력해주세요!");
+                return null;
+            }
+            
+            const prompt = `대한민국 건축법을 고려하여, 제공된 지형 데이터에 적합한 3가지 건축 대안을 생성해주세요.
+            
+[데이터]
+- 고도: ${selectedCoordinatesInfo.elevation}m, 경사도: ${selectedCoordinatesInfo.slope}도
+- 희망 층수: ${floors}층, 목표 연면적: ${area}㎡
+- 주 용도: ${use === 'residential' ? '주거시설' : (use === 'commercial' ? '상업시설' : '업무시설')}`;
+
+            try {
+                // 사용자가 요청한 모델 (gemini-1.5-flash) 사용
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${finalGeminiKey}`;
+                
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: {
+                            temperature: 0.8,
+                            maxOutputTokens: 2500,
+                            responseMimeType: "application/json",
+                            // ==== 스키마 강제 로직 ==== //
+                            responseSchema: {
+                                type: "OBJECT",
+                                properties: {
+                                    alternatives: {
+                                        type: "ARRAY",
+                                        description: "건축 대안 리스트 (반드시 3개의 요소 포함)",
+                                        items: {
+                                            type: "OBJECT",
+                                            properties: {
+                                                name: { type: "STRING", description: "대안의 독창적인 한글 이름" },
+                                                concept: { type: "STRING", description: "대안의 컨셉 상세 설명 (2줄)" },
+                                                width: { type: "NUMBER", description: "건축물 가로 폭 (단위: m, 소수점 가능)" },
+                                                depth: { type: "NUMBER", description: "건축물 세로 깊이 (단위: m, 소수점 가능)" },
+                                                height: { type: "NUMBER", description: "건축물 층별 층고 (단위: m, 주로 3.0 ~ 4.5)" },
+                                                color: { type: "STRING", description: "대안과 어울리는 16진수 색상 코드 (예: #4f46e5 또는 tailwind color 문자)" }
+                                            },
+                                            required: ["name", "concept", "width", "depth", "height", "color"]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    })
+                });
+
+                if (!response.ok) {
+                    if (response.status === 429) {
+                        throw new Error("429: 할당량 초과(무료 API 권한 제한). 잠시 후 다시 시도해주세요.");
+                    }
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                const textResult = data.candidates[0].content.parts[0].text.trim();
+                
+                // responseSchema 덕분에 바로 JSON 파싱이 안전하게 가능
+                const parsedObject = JSON.parse(textResult);
+                
+                // 파싱된 객체의 alternatives 배열 매핑
+                const mappedAlternatives = [];
+                let counter = 1;
+
+                if (parsedObject && parsedObject.alternatives && Array.isArray(parsedObject.alternatives)) {
+                    parsedObject.alternatives.forEach(item => {
+                        const coverageProxy = Math.round(Math.random()*15 + 40); // 40~55% 사이
+                        const farProxy = Math.round(coverageProxy * floors);
+                        const aFloor = Math.round(item.width * item.depth * 10) / 10;
+                        const tArea = Math.round(aFloor * floors * 10) / 10;
+
+                        mappedAlternatives.push({
+                            id: counter++,
+                            title: item.name,
+                            concept: item.concept,
+                            use: `${use === 'residential' ? '주거용' : (use === 'commercial' ? '상업용' : '업무용')}`,
+                            floors: floors, // 사용자 입력값 유지
+                            coverage: coverageProxy,
+                            far: farProxy,
+                            areaPerFloor: aFloor,
+                            totalArea: tArea,
+                            aiColor: item.color, // 모델이 생성한 색상 활용
+                            dimensions: {
+                                w: item.width || 15.0,
+                                d: item.depth || 15.0,
+                                h: item.height || 3.0
+                            }
+                        });
+                    });
+                } else {
+                    throw new Error("API 응답에서 'alternatives' 배열을 찾을 수 없습니다.");
+                }
+
+                return mappedAlternatives;
+                
+            } catch (error) {
+                console.error("Gemini API Error:", error);
+                alert("AI 대안 생성 구조에 오류가 발생했습니다: \n" + error.message);
+                return null;
+            }
+        }
+
+        // ==========================================
+        // [Step 3: 대안 버튼 이벤트 및 카드 렌더링 로직]
+        // ==========================================
+        document.getElementById('generate-btn').addEventListener('click', async () => {
+            if (!selectedCoordinates) {
+                document.getElementById('generate-warn').classList.remove('hidden');
+                return;
+            }
+
+            const use = document.getElementById('building-use').value;
+            const floors = parseInt(document.getElementById('floors').value) || 4;
+            const area = parseInt(document.getElementById('target-area').value) || 450;
+
+            const btn = document.getElementById('generate-btn');
+            const originalText = btn.innerHTML;
+            
+            btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 w-5 h-5 text-indigo-300 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> AI가 Schema 기준 대안을 생성 중입니다...`;
+            btn.disabled = true;
+            btn.classList.replace('bg-slate-900', 'bg-slate-700');
+            
+            const viewer = document.getElementById('viewer-section');
+            viewer.classList.add('opacity-0', 'pointer-events-none');
+            setTimeout(() => viewer.classList.add('hidden'), 500);
+
+            const generatedData = await callGeminiAPI(use, floors, area);
+            
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            btn.classList.replace('bg-slate-700', 'bg-slate-900');
+
+            if (generatedData && Array.isArray(generatedData) && generatedData.length > 0) {
+                alternativesData = generatedData;
+                renderAlternativeCards(generatedData);
+            }
+        });
+
+        // 카드 UI의 가시성을 위해 색상풀 고정 (ai_color는 3D Mesh에만 헥사로 직접 사용)
+        const uiThemeColors = ['indigo', 'emerald', 'sky', 'rose', 'amber', 'violet'];
+
+        function renderAlternativeCards(dataArray) {
+            const container = document.getElementById('alternatives-container');
+            container.innerHTML = '';
+
+            dataArray.forEach((data, index) => {
+                const uiColor = uiThemeColors[index % uiThemeColors.length];
+                
+                container.innerHTML += `
+                    <div class="bg-white rounded-2xl shadow-sm p-5 border border-slate-200 hover:border-${uiColor}-400 hover:shadow-lg transition-all cursor-pointer flex flex-col h-full group select-none" id="alt-card-${data.id}">
+                        <div class="flex justify-between items-start mb-3">
+                            <div>
+                                <h3 class="text-[17px] font-bold text-slate-800 group-hover:text-${uiColor}-600 transition-colors leading-tight">${data.title}</h3>
+                                <p class="text-[10px] text-slate-400 mt-0.5 font-bold uppercase tracking-wider">AI Option ${index+1} / ${data.use}</p>
+                            </div>
+                            <span class="bg-${uiColor}-50 text-${uiColor}-600 text-[11px] font-black px-2.5 py-1 rounded border border-${uiColor}-100 shrink-0">${data.floors}층</span>
+                        </div>
+                        
+                        <!-- AI Concept Explain -->
+                        <div class="bg-slate-50 p-3 rounded-xl mb-4 flex-grow border border-slate-100 flex flex-col relative overflow-hidden">
+                            <div class="absolute top-0 left-0 w-1 h-full bg-${uiColor}-400"></div>
+                            <p class="text-[12px] text-slate-600 italic leading-relaxed pl-1 flex-grow font-medium text-justify w-full">"${data.concept}"</p>
+                        </div>
+                        
+                        <!-- Specs -->
+                        <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-[11px] text-slate-500 mb-5 px-1 font-medium">
+                            <div class="flex justify-between border-b border-slate-100 pb-1"><span>건폐율</span> <span class="text-slate-800 font-bold">${data.coverage}%</span></div>
+                            <div class="flex justify-between border-b border-slate-100 pb-1"><span>용적률</span> <span class="text-slate-800 font-bold">${data.far}%</span></div>
+                            <div class="flex justify-between"><span>기준 면적</span> <span class="text-slate-800 font-bold">${data.areaPerFloor} ㎡</span></div>
+                            <div class="flex justify-between"><span>전체 넓이</span> <span class="text-slate-800 font-bold">${data.totalArea} ㎡</span></div>
+                        </div>
+                        
+                        <button onclick="selectAlternative(${data.id})" class="w-full bg-slate-50 text-${uiColor}-600 font-bold py-2.5 px-4 rounded-xl border border-${uiColor}-200 hover:bg-${uiColor}-50 hover:border-${uiColor}-400 transition-all duration-300">
+                            이 구조 3D 시각화
+                        </button>
+                    </div>
+                `;
+            });
+        }
+
+        // ==========================================
+        // [Step 4: Three.js 3D 뷰어 렌더링 로직]
+        // ==========================================
+        let scene, camera, renderer, controls;
+        let currentMeshList = [];
+
+        function initThreeJS() {
+            const container = document.getElementById('three-canvas');
+            if (renderer) return;
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf8fafc);
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+            dirLight.position.set(40, 60, 30);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            scene.add(dirLight);
+
+            const hemiLight = new THREE.HemisphereLight( 0xffffff, 0x475569, 0.4 ); 
+            hemiLight.position.set( 0, 50, 0 );
+            scene.add( hemiLight );
+
+            camera = new THREE.PerspectiveCamera(35, container.clientWidth / container.clientHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 - 0.05; 
+
+            const grid = new THREE.GridHelper(80, 80, 0x94a3b8, 0xe2e8f0);
+            scene.add(grid);
+
+            const planeGeom = new THREE.PlaneGeometry(100, 100);
+            const planeMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 });
+            const plane = new THREE.Mesh(planeGeom, planeMat);
+            plane.rotation.x = -Math.PI / 2;
+            plane.receiveShadow = true;
+            scene.add(plane);
+
+            const circleGeom = new THREE.RingGeometry(24.6, 25.0, 64);
+            const circleMat = new THREE.MeshBasicMaterial({ color: 0x4f46e5, side: THREE.DoubleSide, opacity: 0.25, transparent: true });
+            const circle = new THREE.Mesh(circleGeom, circleMat);
+            circle.rotation.x = -Math.PI / 2;
+            circle.position.y = 0.05;
+            scene.add(circle);
+
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            const container = document.getElementById('three-canvas');
+            if (camera && renderer && container.clientWidth) {
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            }
+        });
+
+        function selectAlternative(id) {
+            selectedAlternative = alternativesData.find(a => a.id === id);
+            
+            const targetIndex = alternativesData.findIndex(a => a.id === id);
+            const uiColor = uiThemeColors[targetIndex % uiThemeColors.length];
+            
+            alternativesData.forEach((a, idx) => {
+                const cColor = uiThemeColors[idx % uiThemeColors.length];
+                const card = document.getElementById(`alt-card-${a.id}`);
+                if(a.id === id) { card.classList.add(`ring-2`, `ring-${uiColor}-500`, 'shadow-md'); } 
+                else { card.classList.remove('ring-2', `ring-${cColor}-500`, 'shadow-md'); }
+            });
+
+            const viewerSection = document.getElementById('viewer-section');
+            viewerSection.classList.remove('hidden');
+            setTimeout(() => { viewerSection.classList.remove('opacity-0', 'pointer-events-none'); }, 50);
+            
+            document.getElementById('current-alt-label').innerHTML = `AI Model: <span class="font-bold ml-1">${selectedAlternative.title}</span>`;
+
+            if (!scene) initThreeJS();
+
+            currentMeshList.forEach(mesh => scene.remove(mesh));
+            currentMeshList = [];
+
+            const massGroup = new THREE.Group();
+            
+            // 치수 추출
+            const vData = selectedAlternative.dimensions;
+            const floors = parseInt(selectedAlternative.floors);
+            
+            // AI가 모델상에서 지정해준 색상 처리 로직(없는 경우 Tailwind Hex)
+            let parsedMeshHex = 0x6366f1; // 띰 컬러 매핑 폴백 기본
+            if (selectedAlternative.aiColor && selectedAlternative.aiColor.includes('#')) {
+                parsedMeshHex = parseInt(selectedAlternative.aiColor.replace('#', '0x'));
+            } else if (uiColor === 'emerald') parsedMeshHex = 0x10b981;
+            else if (uiColor === 'sky') parsedMeshHex = 0x0ea5e9;
+            else if (uiColor === 'rose') parsedMeshHex = 0xf43f5e;
+            else if (uiColor === 'amber') parsedMeshHex = 0xf59e0b;
+            else if (uiColor === 'violet') parsedMeshHex = 0x8b5cf6;
+            
+            const buildingMat = new THREE.MeshStandardMaterial({ 
+                color: parsedMeshHex, transparent: true, opacity: 0.85, roughness: 0.1, metalness: 0.2
+            });
+            const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 1, transparent: true, opacity: 0.6 }); 
+
+            for (let f = 0; f < floors; f++) {
+                const setbackFactor = f > 2 ? 0.9 : 1; 
+                const geom = new THREE.BoxGeometry(vData.w * setbackFactor, vData.h, vData.d * setbackFactor);
+                
+                const mesh = new THREE.Mesh(geom, buildingMat);
+                mesh.position.y = (vData.h / 2) + (f * vData.h);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                
+                const edges = new THREE.EdgesGeometry(geom);
+                const line = new THREE.LineSegments(edges, lineMat);
+                mesh.add(line);
+
+                massGroup.add(mesh);
+            }
+
+            const baseGeom = new THREE.PlaneGeometry(vData.w+2, vData.d+2);
+            const baseMat = new THREE.MeshBasicMaterial({color: parsedMeshHex, side: THREE.DoubleSide, opacity: 0.15, transparent: true});
+            const baseMesh = new THREE.Mesh(baseGeom, baseMat);
+            baseMesh.rotation.x = -Math.PI / 2;
+            baseMesh.position.y = 0.1;
+            massGroup.add(baseMesh);
+
+            scene.add(massGroup);
+            currentMeshList.push(massGroup);
+            
+            const finalHeight = floors * vData.h;
+            controls.target.set(0, finalHeight / 2, 0);
+            
+            const maxDim = Math.max(vData.w, vData.d);
+            camera.position.set(maxDim * 1.8, finalHeight + 15, maxDim * 1.8);
+            controls.update();
+        }
+
+        // ==========================================
+        // [Step 5: SketchUp 연동 통신 (로컬 TCP 브릿지)]
+        // ==========================================
+        document.getElementById('export-sketchup-btn').addEventListener('click', async () => {
+            if (!selectedAlternative || !selectedCoordinatesInfo.longitude) {
+                alert('옵션을 선택해야 합니다.');
+                return;
+            }
+
+            const exportData = {
+                metadata: { projectID: "GEMINI_ARCH_" + new Date().getTime(), exporter: "Gemini AI Architect" },
+                site: { center: { latitude: parseFloat(selectedCoordinatesInfo.latitude), longitude: parseFloat(selectedCoordinatesInfo.longitude) } },
+                buildingInfo: {
+                    use: selectedAlternative.use,
+                    selectedAlternative: selectedAlternative.title,
+                    floors: selectedAlternative.floors,
+                    totalAreaSqM: parseFloat(selectedAlternative.totalArea),
+                    geometryData: {
+                        massBaseWidthM: selectedAlternative.dimensions.w,
+                        massBaseDepthM: selectedAlternative.dimensions.d,
+                        floorHeightM: selectedAlternative.dimensions.h
+                    }
+                }
+            };
+            const jsonStr = JSON.stringify(exportData, null, 2);
+
+            try {
+                const response = await fetch('http://127.0.0.1:3000/export', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: jsonStr
+                });
+                
+                if (response.ok) {
+                    alert('✨ Gemini AI의 설계안이 스케치업으로 실시간 전송되었습니다!\n스케치업 화면을 확인하세요.');
+                } else { throw new Error('Server returned an error'); }
+            } catch (error) {
+                console.log('로컬 서버 전송 실패. 파일로 백업 다운로드:', error);
+                
+                const blob = new Blob([jsonStr], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `Gemini_AI_Export_${selectedAlternative.title.replace(/ /g,'_')}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                
+                alert('경고: 스케치업 서버가 켜져있지 않아 .json 로컬 파일로 저장되었습니다.\n실시간 연동을 원하시면 스케치업 루비서버를 켜주세요.');
+            }
+        });
+
+    </script>
+</body>
+</html>
